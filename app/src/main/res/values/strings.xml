@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Emotion Detector</string>
+    <string name="analyze_text">Analyse Text</string>
+    <string name="start_recording">Start Recording</string>
+    <string name="stop_recording">Stop Recording</string>
+    <string name="analyze_all">Analyse All</string>
+    <string name="status_ready">Ready</string>
+    <string name="error_no_text">Please enter some text</string>
+    <string name="error_no_audio">No recording found. Please record audio first.</string>
+    <string name="error_permission">Microphone permission required</string>
+</resources>
