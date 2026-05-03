@@ -248,8 +248,8 @@ public class MainActivity extends AppCompatActivity {
     private void setupFLStatusListeners() {
         btnSyncModel.setOnClickListener(v -> {
             btnSyncModel.setEnabled(false);
-            tvServerStatus.setText("Server: syncing...");
-            checkForModelUpdates();
+            tvServerStatus.setText("Server: connecting...");
+            syncModelWithServer();
         });
     }
 
@@ -314,23 +314,27 @@ public class MainActivity extends AppCompatActivity {
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Check the FL server for model updates. If a newer version exists,
-     * download it and hot-swap the TFLite interpreter.
+     * Full sync: trigger server training → poll for new model → download → hot-swap.
+     * Called from the Sync button.
      */
-    private void checkForModelUpdates() {
-        feedbackManager.checkAndApplyModelUpdate(new FeedbackManager.ModelUpdateCallback() {
+    private void syncModelWithServer() {
+        feedbackManager.syncWithServer(new FeedbackManager.ModelUpdateCallback() {
+            @Override
+            public void onStatusUpdate(String message) {
+                runOnUiThread(() -> tvServerStatus.setText("⏳ " + message));
+            }
+
             @Override
             public void onModelUpdated(int newVersion) {
                 runOnUiThread(() -> {
-                    // Hot-swap the interpreter with the newly downloaded model
                     Interpreter newInterpreter = feedbackManager.loadUpdatedModelInterpreter();
                     if (newInterpreter != null && textProcessor != null) {
                         textProcessor.reloadInterpreter(newInterpreter);
-                        setStatus("🔄 Model updated to v" + newVersion + " from FL server!");
+                        setStatus("🎉 Model updated to v" + newVersion + " from FL server!");
                         tvModelVersion.setText("Model: v" + newVersion + " (FL-updated)");
+                        tvServerStatus.setText("Server: 🟢 model v" + newVersion + " applied!");
                         Toast.makeText(MainActivity.this,
-                                "Model updated to v" + newVersion + "!",
-                                Toast.LENGTH_SHORT).show();
+                                "✅ FL Model v" + newVersion + " loaded!", Toast.LENGTH_LONG).show();
                     }
                     btnSyncModel.setEnabled(true);
                 });
@@ -339,11 +343,41 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onModelUpdateFailed(String error) {
                 runOnUiThread(() -> {
-                    Log.d(TAG, "Model update check: " + error);
+                    Log.d(TAG, "Sync result: " + error);
                     int version = feedbackManager.getCurrentModelVersion();
                     tvModelVersion.setText("Model: v" + version
                             + (version == 0 ? " (bundled)" : " (FL-updated)"));
+                    tvServerStatus.setText("Server: ℹ " + error);
                     btnSyncModel.setEnabled(true);
+                });
+            }
+        });
+    }
+
+    /**
+     * Passive check on startup — only download if a newer version exists, no training trigger.
+     */
+    private void checkForModelUpdates() {
+        feedbackManager.checkAndApplyModelUpdate(new FeedbackManager.ModelUpdateCallback() {
+            @Override
+            public void onModelUpdated(int newVersion) {
+                runOnUiThread(() -> {
+                    Interpreter newInterpreter = feedbackManager.loadUpdatedModelInterpreter();
+                    if (newInterpreter != null && textProcessor != null) {
+                        textProcessor.reloadInterpreter(newInterpreter);
+                        setStatus("🔄 Model updated to v" + newVersion + " from FL server!");
+                        tvModelVersion.setText("Model: v" + newVersion + " (FL-updated)");
+                    }
+                    btnSyncModel.setEnabled(true);
+                });
+            }
+
+            @Override
+            public void onModelUpdateFailed(String error) {
+                runOnUiThread(() -> {
+                    int version = feedbackManager.getCurrentModelVersion();
+                    tvModelVersion.setText("Model: v" + version
+                            + (version == 0 ? " (bundled)" : " (FL-updated)"));
                 });
             }
         });

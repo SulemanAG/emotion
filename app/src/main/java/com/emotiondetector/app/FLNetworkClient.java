@@ -39,9 +39,10 @@ public class FLNetworkClient {
 
     public FLNetworkClient() {
         client = new OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                .connectTimeout(90, TimeUnit.SECONDS)   // Render free tier cold start = up to 50s
+                .readTimeout(120, TimeUnit.SECONDS)      // Training response can take a while
+                .writeTimeout(60, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
                 .build();
     }
 
@@ -51,11 +52,13 @@ public class FLNetworkClient {
         public final boolean hasUpdate;
         public final int latestVersion;
         public final int totalFeedback;
+        public final boolean isTraining;
 
-        public ModelUpdateInfo(boolean hasUpdate, int latestVersion, int totalFeedback) {
+        public ModelUpdateInfo(boolean hasUpdate, int latestVersion, int totalFeedback, boolean isTraining) {
             this.hasUpdate = hasUpdate;
             this.latestVersion = latestVersion;
             this.totalFeedback = totalFeedback;
+            this.isTraining = isTraining;
         }
     }
 
@@ -75,12 +78,14 @@ public class FLNetworkClient {
         public final boolean online;
         public final int modelVersion;
         public final int feedbackCount;
+        public final boolean isTraining;
         public final String message;
 
-        public ServerStatus(boolean online, int modelVersion, int feedbackCount, String message) {
+        public ServerStatus(boolean online, int modelVersion, int feedbackCount, boolean isTraining, String message) {
             this.online = online;
             this.modelVersion = modelVersion;
             this.feedbackCount = feedbackCount;
+            this.isTraining = isTraining;
             this.message = message;
         }
     }
@@ -153,17 +158,42 @@ public class FLNetworkClient {
                     boolean hasUpdate = resp.optBoolean("has_update", false);
                     int latestVersion = resp.optInt("latest_version", currentVersion);
                     int totalFeedback = resp.optInt("total_feedback", 0);
-                    Log.d(TAG, "Model update check: hasUpdate=" + hasUpdate
-                            + ", latestVersion=" + latestVersion);
-                    return new ModelUpdateInfo(hasUpdate, latestVersion, totalFeedback);
+                    boolean isTraining = resp.optBoolean("is_training", false);
+                    Log.d(TAG, "Update check: hasUpdate=" + hasUpdate
+                            + ", v" + latestVersion + ", training=" + isTraining);
+                    return new ModelUpdateInfo(hasUpdate, latestVersion, totalFeedback, isTraining);
                 } else {
-                    Log.e(TAG, "Model update check failed: " + response.code());
+                    Log.e(TAG, "Update check failed: " + response.code());
                     return null;
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Model update check error", e);
+            Log.e(TAG, "Update check error", e);
             return null;
+        }
+    }
+
+    /**
+     * Explicitly trigger model training on the server.
+     * Returns true if training was started successfully.
+     */
+    public boolean triggerTraining() {
+        try {
+            RequestBody body = RequestBody.create("{}", JSON);
+            Request request = new Request.Builder()
+                    .url(BASE_URL + "/trigger_training")
+                    .post(body)
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                String bodyStr = response.body() != null ? response.body().string() : "";
+                Log.d(TAG, "Trigger training response: " + response.code() + " " + bodyStr);
+                // 200 = started, 409 = already running (both are OK)
+                return response.code() == 200 || response.code() == 409;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Trigger training error", e);
+            return false;
         }
     }
 
@@ -224,6 +254,7 @@ public class FLNetworkClient {
                             true,
                             resp.optInt("model_version", 0),
                             resp.optInt("total_feedback", 0),
+                            resp.optBoolean("is_training", false),
                             resp.optString("status", "ok")
                     );
                 }
@@ -231,6 +262,6 @@ public class FLNetworkClient {
         } catch (Exception e) {
             Log.e(TAG, "Server status check failed", e);
         }
-        return new ServerStatus(false, 0, 0, "Server unreachable");
+        return new ServerStatus(false, 0, 0, false, "Server unreachable");
     }
 }
