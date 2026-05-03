@@ -3,7 +3,7 @@ services:
     name: emotion-fl-server
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn fl_server:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn fl_server:app --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.0"
@@ -11,3 +11,7 @@ services:
     autoDeploy: true
     repo: https://github.com/SulemanAG/emotion.git
     branch: main
+    disk:
+      name: fl-data
+      mountPath: /opt/render/project/src/fl_data
+      sizeGB: 1

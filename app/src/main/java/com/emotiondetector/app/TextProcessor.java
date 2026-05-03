@@ -23,7 +23,7 @@ import java.util.Map;
 public class TextProcessor {
     private static final String TAG = "TextProcessor";
     private static final int SEQ_LEN = 100;
-    private final Interpreter interpreter;
+    private Interpreter interpreter;
     private Map<String, Integer> wordIndex;
 
     public TextProcessor(Context context, Interpreter interpreter) {
@@ -87,7 +87,10 @@ public class TextProcessor {
         return output[0];
     }
 
-    private int[] tokenize(String text) {
+    /**
+     * Tokenize text into integer sequence. Made public for FL feedback.
+     */
+    public int[] tokenize(String text) {
         String[] words = text.toLowerCase().trim().split("\\s+");
         int[] sequence = new int[words.length];
         for (int i = 0; i < words.length; i++) {
@@ -98,7 +101,10 @@ public class TextProcessor {
         return sequence;
     }
 
-    private int[] padSequence(int[] sequence, int length) {
+    /**
+     * Pad/truncate a token sequence to the given length. Made public for FL feedback.
+     */
+    public int[] padSequence(int[] sequence, int length) {
         int[] padded = new int[length];
         if (sequence.length > length) {
             // Truncate (keep last 100)
@@ -109,6 +115,31 @@ public class TextProcessor {
             System.arraycopy(sequence, 0, padded, start, sequence.length);
         }
         return padded;
+    }
+
+    /**
+     * Hot-swap the TFLite interpreter with an updated model from the FL server.
+     * Closes the old interpreter and replaces it with the new one.
+     *
+     * @param newInterpreter the new TFLite interpreter loaded from the updated model
+     */
+    public void reloadInterpreter(Interpreter newInterpreter) {
+        if (interpreter != null) {
+            try {
+                interpreter.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing old interpreter", e);
+            }
+        }
+        this.interpreter = newInterpreter;
+        Log.d(TAG, "✅ Text model interpreter hot-swapped successfully.");
+    }
+
+    /**
+     * Get the fixed sequence length used by this processor.
+     */
+    public int getSeqLen() {
+        return SEQ_LEN;
     }
 
     public void close() {
