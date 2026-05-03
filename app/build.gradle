@@ -35,6 +35,10 @@ android {
 
     // Allow TFLite packaging
     packaging {
+        jniLibs {
+            useLegacyPackaging true
+            pickFirsts += ['**/libtensorflowlite_jni.so', '**/libtensorflowlite_flex_jni.so']
+        }
         resources {
             pickFirsts += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt']
         }

@@ -51,20 +51,15 @@ public class AudioProcessor {
         Log.d(TAG, "Extracted MFCCs: " + mfcc.length + "x" + (mfcc.length > 0 ? mfcc[0].length : 0));
 
         // 3. Prepare Input based on model shape
-        // If the shape is [1, 40, 1], we likely need the mean of MFCCs over frames.
-        // If the shape is [1, 87, 40, 1], we need the sequence.
+        // CONV_2D layers require 4D input [batch, height, width, channels].
+        // If the model reports 3D shape [1, 40, 1], we reshape to 4D [1, 1, 40, 1]
+        // because the model internally uses CONV_2D.
         
         Object input;
-        if (inputShape.length == 3 && inputShape[1] == N_MFCC && inputShape[2] == 1) {
-            // Shape [1, 40, 1]
-            float[][][] audioInput = new float[1][N_MFCC][1];
-            float[] means = calculateMean(mfcc);
-            for (int i = 0; i < N_MFCC; i++) {
-                audioInput[0][i][0] = means[i];
-            }
-            input = audioInput;
-        } else if (inputShape.length == 4 && inputShape[2] == N_MFCC) {
-            // Shape [1, MAX_FRAMES, 40, 1]
+        float[] means = calculateMean(mfcc);
+
+        if (inputShape.length == 4 && inputShape[2] == N_MFCC) {
+            // Shape [1, MAX_FRAMES, 40, 1] — sequence of MFCC frames
             int maxFrames = inputShape[1];
             float[][][][] audioInput = new float[1][maxFrames][N_MFCC][1];
             float[][] transposed = transpose(mfcc); // [frames][40]
@@ -74,13 +69,45 @@ public class AudioProcessor {
                 }
             }
             input = audioInput;
+            Log.d(TAG, "Using 4D sequence input: [1, " + maxFrames + ", " + N_MFCC + ", 1]");
+
+        } else if (inputShape.length == 4 && inputShape[1] == N_MFCC) {
+            // Shape [1, 40, X, 1] — transposed layout
+            int dim2 = inputShape[2];
+            float[][][][] audioInput = new float[1][N_MFCC][dim2][1];
+            for (int i = 0; i < N_MFCC; i++) {
+                audioInput[0][i][0][0] = means[i];
+            }
+            input = audioInput;
+            Log.d(TAG, "Using 4D transposed input: [1, " + N_MFCC + ", " + dim2 + ", 1]");
+
+        } else if (inputShape.length == 3 && inputShape[1] == N_MFCC && inputShape[2] == 1) {
+            // Shape [1, 40, 1] — but model has CONV_2D internally
+            // Try 4D [1, 1, 40, 1] to satisfy CONV_2D requirement
+            float[][][][] audioInput4D = new float[1][1][N_MFCC][1];
+            for (int i = 0; i < N_MFCC; i++) {
+                audioInput4D[0][0][i][0] = means[i];
+            }
+            input = audioInput4D;
+            Log.d(TAG, "Reshaping 3D→4D input: [1, 1, " + N_MFCC + ", 1] for CONV_2D compatibility");
+
         } else {
-            // Fallback: use first frame or whatever matches
-            Log.w(TAG, "Unexpected input shape: " + Arrays.toString(inputShape) + ". Attempting fallback.");
-            float[][] fallback = new float[1][N_MFCC]; // very simple fallback
-            float[] means = calculateMean(mfcc);
-            System.arraycopy(means, 0, fallback[0], 0, N_MFCC);
-            input = fallback;
+            // Generic fallback: create array matching exact inputShape dimensions
+            Log.w(TAG, "Unexpected input shape: " + Arrays.toString(inputShape) + ". Using dynamic fallback.");
+            if (inputShape.length == 2) {
+                float[][] fallback = new float[1][inputShape[1]];
+                for (int i = 0; i < Math.min(inputShape[1], N_MFCC); i++) {
+                    fallback[0][i] = means[i];
+                }
+                input = fallback;
+            } else {
+                // Last resort: 4D with mean MFCCs
+                float[][][][] fallback4D = new float[1][1][N_MFCC][1];
+                for (int i = 0; i < N_MFCC; i++) {
+                    fallback4D[0][0][i][0] = means[i];
+                }
+                input = fallback4D;
+            }
         }
 
         float[][] output = new float[1][EmotionLabels.NUM_CLASSES];
