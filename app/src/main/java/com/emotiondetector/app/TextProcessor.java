@@ -44,12 +44,36 @@ public class TextProcessor {
 
             Gson gson = new Gson();
             JsonObject jsonObject = gson.fromJson(sb.toString(), JsonObject.class);
-            JsonObject wordIndexJson = jsonObject.getAsJsonObject("word_index");
-
             Type type = new TypeToken<HashMap<String, Integer>>() {}.getType();
-            wordIndex = gson.fromJson(wordIndexJson, type);
+
+            // The tokenizer.json has structure:
+            //   {"class_name": "Tokenizer", "config": {"word_index": "{\"word\": 1, ...}", ...}}
+            // word_index is inside "config" and is a JSON-encoded STRING, not a direct object.
+            if (jsonObject.has("config")) {
+                JsonObject config = jsonObject.getAsJsonObject("config");
+                if (config.has("word_index")) {
+                    String wordIndexStr = config.get("word_index").getAsString();
+                    wordIndex = gson.fromJson(wordIndexStr, type);
+                    Log.d(TAG, "Loaded word_index from config (string format).");
+                }
+            }
+
+            // Fallback: try top-level "word_index" as direct object
+            if (wordIndex == null && jsonObject.has("word_index")) {
+                JsonObject wordIndexJson = jsonObject.getAsJsonObject("word_index");
+                if (wordIndexJson != null) {
+                    wordIndex = gson.fromJson(wordIndexJson, type);
+                    Log.d(TAG, "Loaded word_index from top-level object.");
+                }
+            }
+
+            if (wordIndex == null) {
+                Log.e(TAG, "Could not find word_index in tokenizer.json");
+                wordIndex = new HashMap<>();
+                return;
+            }
             
-            // Ensure all keys are lowercase as per instructions
+            // Ensure all keys are lowercase
             Map<String, Integer> lowerCaseMap = new HashMap<>();
             for (Map.Entry<String, Integer> entry : wordIndex.entrySet()) {
                 lowerCaseMap.put(entry.getKey().toLowerCase(), entry.getValue());
@@ -57,8 +81,9 @@ public class TextProcessor {
             wordIndex = lowerCaseMap;
 
             Log.d(TAG, "Tokenizer loaded with " + wordIndex.size() + " words.");
-        } catch (IOException e) {
+        } catch (Exception e) {
             Log.e(TAG, "Failed to load tokenizer.json", e);
+            wordIndex = new HashMap<>();
         }
     }
 
